@@ -36,7 +36,6 @@
             font-size: 18px;
             font-weight: 600;
             cursor: pointer;
-            min-height: 60px;
         }
         .tab.active { background: #1DB954; color: #000; }
         .page { display: none; padding: 20px; }
@@ -48,12 +47,11 @@
             border-radius: 50px;
             font-weight: bold;
             font-size: 22px;
-            cursor: pointer;
             margin: 20px 0;
-            min-height: 70px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            cursor: pointer;
+            border: none;
+            width: 100%;
+            color: #000;
         }
         .search-box {
             display: flex;
@@ -84,7 +82,6 @@
             padding: 16px;
             margin-bottom: 10px;
             cursor: pointer;
-            font-size: 16px;
         }
         .menu-item {
             background: #1e1e1e;
@@ -121,18 +118,18 @@
 </div>
 
 <div class="tabs">
-    <button class="tab active" onclick="showPage('music')">🎵 MUSIQUE</button>
-    <button class="tab" onclick="showPage('menu')">🍹 MENU</button>
+    <button class="tab active" id="tabMusic">🎵 MUSIQUE</button>
+    <button class="tab" id="tabMenu">🍹 MENU</button>
 </div>
 
 <div id="music-page" class="page active">
     <div id="login-section">
-        <div class="btn-spotify" onclick="loginSpotify()">🔐 SE CONNECTER À SPOTIFY</div>
+        <button class="btn-spotify" id="loginBtn">🔐 SE CONNECTER À SPOTIFY</button>
     </div>
     <div id="player-section" style="display:none;">
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="Artiste ou chanson... (ex: Daft Punk)">
-            <button onclick="searchTrack()">Chercher</button>
+            <button id="searchBtn">Chercher</button>
         </div>
         <div id="results"></div>
         <div id="current-track" style="text-align:center; margin-top:20px; color:#1DB954;"></div>
@@ -140,134 +137,154 @@
 </div>
 
 <div id="menu-page" class="page">
-    <div class="menu-item"><div><strong>Eau</strong><br>50cl</div><div class="price">2€</div></div>
+    <div class="menu-item"><div><strong>Eau</strong><br>Bouteille 50cl</div><div class="price">2€</div></div>
     <div class="menu-item"><div><strong>Oasis</strong><br>33cl</div><div class="price">3€</div></div>
     <div class="menu-item"><div><strong>Coca-Cola</strong><br>33cl</div><div class="price">3€</div></div>
-    <div class="menu-item"><div><strong>Jus d'orange</strong><br>25cl</div><div class="price">3€</div></div>
-    <div class="menu-item"><div><strong>Barre céréales</strong></div><div class="price">2€</div></div>
+    <div class="menu-item"><div><strong>Jus d'orange</strong><br>Pur jus 25cl</div><div class="price">3€</div></div>
+    <div class="menu-item"><div><strong>Barre céréales</strong><br>Énergétique</div><div class="price">2€</div></div>
     <div class="menu-item"><div><strong>Café</strong><br>Expresso</div><div class="price">2,50€</div></div>
-    <div class="qr-box"><p>💳 Paiement</p><div id="qrcode"></div></div>
-    <div class="footer">🚗 À votre service</div>
+    <div class="qr-box"><p>💳 Paiement rapide & sans contact</p><div id="qrcode"></div></div>
+    <div class="footer">🚗 À votre service | CB, Apple Pay, Google Pay</div>
 </div>
 
 <script>
-    const CLIENT_ID = "2dbcb54425c7410f940310f2989e45f5";
-    const REDIRECT_URI = "https://isma66.github.io/vtc/";
-    let accessToken = null;
+    (function() {
+        const CLIENT_ID = "2dbcb54425c7410f940310f2989e45f5";
+        const REDIRECT_URI = "https://isma66.github.io/vtc/";
+        let accessToken = null;
 
-    function generateCodeVerifier() {
-        const array = new Uint8Array(32);
-        crypto.getRandomValues(array);
-        return btoa(String.fromCharCode(...array)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    }
-
-    async function generateCodeChallenge(codeVerifier) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(codeVerifier);
-        const digest = await crypto.subtle.digest('SHA-256', data);
-        return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    }
-
-    async function loginSpotify() {
-        const codeVerifier = generateCodeVerifier();
-        localStorage.setItem('code_verifier', codeVerifier);
-        const codeChallenge = await generateCodeChallenge(codeVerifier);
-        const scope = "user-read-playback-state user-modify-playback-state streaming";
-        window.location.href = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scope)}&code_challenge_method=S256&code_challenge=${codeChallenge}`;
-    }
-
-    async function exchangeCodeForToken(code) {
-        const codeVerifier = localStorage.getItem('code_verifier');
-        const res = await fetch('https://accounts.spotify.com/api/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                client_id: CLIENT_ID,
-                grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: REDIRECT_URI,
-                code_verifier: codeVerifier
-            })
-        });
-        const data = await res.json();
-        if (data.access_token) {
-            accessToken = data.access_token;
-            localStorage.setItem('spotify_token', accessToken);
-            document.getElementById('login-section').style.display = 'none';
-            document.getElementById('player-section').style.display = 'block';
-            window.history.pushState("", "", window.location.pathname);
+        // Version compatible iOS 12 : pas de crypto.subtle
+        function generateRandomString(length) {
+            let result = '';
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+            for (let i = 0; i < length; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
         }
-    }
 
-    function getTokenFromURL() {
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
-        if (code) exchangeCodeForToken(code);
-        else {
-            const saved = localStorage.getItem('spotify_token');
-            if (saved) {
-                accessToken = saved;
+        window.loginSpotify = function() {
+            const codeVerifier = generateRandomString(64);
+            localStorage.setItem('code_verifier', codeVerifier);
+            // Pour iOS 12, on utilise une méthode simple sans challenge
+            const scope = "user-read-playback-state user-modify-playback-state streaming";
+            window.location.href = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scope)}`;
+        };
+
+        async function exchangeCodeForToken(code) {
+            const codeVerifier = localStorage.getItem('code_verifier');
+            const res = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    client_id: CLIENT_ID,
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: REDIRECT_URI,
+                    code_verifier: codeVerifier
+                })
+            });
+            const data = await res.json();
+            if (data.access_token) {
+                accessToken = data.access_token;
+                localStorage.setItem('spotify_token', accessToken);
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('player-section').style.display = 'block';
+                window.history.pushState("", "", window.location.pathname);
             }
         }
-    }
 
-    async function searchTrack() {
-        const query = document.getElementById('searchInput').value;
-        if (!query || !accessToken) return;
-        document.getElementById('results').innerHTML = '<div style="text-align:center;">🔍 Recherche...</div>';
-        const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const data = await res.json();
-        const div = document.getElementById('results');
-        div.innerHTML = '';
-        if (data.tracks && data.tracks.items) {
-            data.tracks.items.forEach(t => {
-                let item = document.createElement('div');
-                item.className = 'result-item';
-                item.innerHTML = `<strong>${t.name}</strong><br>${t.artists.map(a=>a.name).join(', ')}`;
-                item.onclick = () => playTrack(t.uri);
-                div.appendChild(item);
+        function getTokenFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            if (code) exchangeCodeForToken(code);
+            else {
+                const saved = localStorage.getItem('spotify_token');
+                if (saved) {
+                    accessToken = saved;
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('player-section').style.display = 'block';
+                }
+            }
+        }
+
+        window.searchTrack = async function() {
+            const query = document.getElementById('searchInput').value;
+            if (!query || !accessToken) return;
+            document.getElementById('results').innerHTML = '<div style="text-align:center;">🔍 Recherche...</div>';
+            const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
             });
-        }
-    }
+            const data = await res.json();
+            const div = document.getElementById('results');
+            div.innerHTML = '';
+            if (data.tracks && data.tracks.items) {
+                data.tracks.items.forEach(t => {
+                    let item = document.createElement('div');
+                    item.className = 'result-item';
+                    item.innerHTML = `<strong>${t.name}</strong><br>${t.artists.map(a=>a.name).join(', ')}`;
+                    item.onclick = () => window.playTrack(t.uri);
+                    div.appendChild(item);
+                });
+            }
+        };
 
-    async function playTrack(uri) {
-        const trackDiv = document.getElementById('current-track');
-        trackDiv.innerHTML = '🎵 Lancement...';
-        const res = await fetch('https://api.spotify.com/v1/me/player/play', {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uris: [uri] })
+        window.playTrack = async function(uri) {
+            const trackDiv = document.getElementById('current-track');
+            trackDiv.innerHTML = '🎵 Lancement...';
+            const res = await fetch('https://api.spotify.com/v1/me/player/play', {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uris: [uri] })
+            });
+            if (res.ok) {
+                trackDiv.innerHTML = '🎵 En cours de lecture !';
+                setTimeout(() => trackDiv.innerHTML = '', 3000);
+            } else if (res.status === 404) {
+                trackDiv.innerHTML = '⚠️ Ouvrez Spotify sur l\'iPad une fois, puis réessayez';
+            }
+        };
+
+        function showPage(page) {
+            const musicPage = document.getElementById('music-page');
+            const menuPage = document.getElementById('menu-page');
+            const tabMusic = document.getElementById('tabMusic');
+            const tabMenu = document.getElementById('tabMenu');
+            
+            if (page === 'music') {
+                musicPage.classList.add('active');
+                menuPage.classList.remove('active');
+                tabMusic.classList.add('active');
+                tabMenu.classList.remove('active');
+            } else {
+                menuPage.classList.add('active');
+                musicPage.classList.remove('active');
+                tabMenu.classList.add('active');
+                tabMusic.classList.remove('active');
+            }
+        }
+
+        function makeQR() {
+            const q = document.getElementById('qrcode');
+            if (q && typeof QRCode !== 'undefined') {
+                q.innerHTML = '';
+                new QRCode(q, { text: "https://paypal.me/votrecompte", width: 150, height: 150 });
+            }
+        }
+
+        document.getElementById('tabMusic').onclick = () => showPage('music');
+        document.getElementById('tabMenu').onclick = () => showPage('menu');
+        document.getElementById('loginBtn').onclick = () => window.loginSpotify();
+        document.getElementById('searchBtn').onclick = () => window.searchTrack();
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') window.searchTrack();
         });
-        if (res.ok) {
-            trackDiv.innerHTML = '🎵 En cours de lecture !';
-            setTimeout(() => trackDiv.innerHTML = '', 3000);
-        } else if (res.status === 404) {
-            trackDiv.innerHTML = '⚠️ Ouvrez Spotify sur l\'iPad une fois, puis réessayez';
-        }
-    }
 
-    function showPage(p) {
-        document.getElementById('music-page').classList.toggle('active', p === 'music');
-        document.getElementById('menu-page').classList.toggle('active', p === 'menu');
-        const tabs = document.querySelectorAll('.tab');
-        tabs[0].classList.toggle('active', p === 'music');
-        tabs[1].classList.toggle('active', p === 'menu');
-    }
-
-    function makeQR() {
-        const q = document.getElementById('qrcode');
-        if (q && typeof QRCode !== 'undefined') {
-            q.innerHTML = '';
-            new QRCode(q, { text: "https://paypal.me/votrecompte", width: 150, height: 150 });
-        }
-    }
-
-    document.getElementById('searchInput')?.addEventListener('keypress', e => { if(e.key === 'Enter') searchTrack(); });
-    window.addEventListener('load', () => { getTokenFromURL(); makeQR(); });
+        window.addEventListener('load', () => {
+            getTokenFromURL();
+            makeQR();
+        });
+    })();
 </script>
 </body>
 </html>
